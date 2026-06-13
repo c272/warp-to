@@ -38,8 +38,12 @@ Usage: [1] w [OPTIONS] <TERMS>...
 
 * [2] Jump-based navigation.
  Jump directly to a parent directory, with the number of hops determined by the "N" parameter.
- For example, the below command will jump 4 directories up from the CWD. You can specify up to 9.
+ For example, the below command will jump 4 directories up from the CWD. You can specify from 1 (or ..) up to 9.
    ~> w .4
+
+ You can also use relative jumps as the start of a term-based search.
+   ~> w .4 foo
+   ~> w .. bar
 
 * [3] Shortcut-based navigation.
  Jump directly to a user specified shortcut directory. These are specified in the `warp-to` settings file, found at either
@@ -54,6 +58,7 @@ Terms:
   *  /              The root directory. On Windows, the drive root relative to the CWD.
   *  ~              The current user's home directory.
   *  <PATH>         A concrete path name.
+  *  .<N>           A relative jump up from the CWD of N spaces. Also supports "..".
   *  +<SHORTCUT>    A user-defined shortcut. See [3] for details.
 
 "#;
