@@ -202,14 +202,9 @@ fn fetch_root() -> Result<PathBuf, String> {
     Ok(PathBuf::from(ROOT_CHAR))
 }
 
-#[cfg(target_os = "windows")]
 fn fetch_home() -> Result<PathBuf, String> {
-    todo!()
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-fn fetch_home() -> Result<PathBuf, String> {
-  Ok(PathBuf::from(HOME_CHAR))
+  let home_dir = std::env::home_dir().ok_or("Failed to find home directory.".to_string())?;
+  Ok(home_dir)
 }
 
 #[derive(Clone, Copy)]
@@ -263,7 +258,7 @@ fn search_by_groups(groups: &[SearchGroup]) -> Result<PathBuf, String> {
       let mut new_candidates = HashSet::new();
 
       for candidate in &candidates {
-        let search_options = SearchOptions { max_distance: MAX_DIST - candidate.distance, search_up: true };
+        let search_options = SearchOptions { max_distance: MAX_DIST - candidate.distance, search_up: false };
         let mut results = search_for_group(group, &candidate.path, search_options)?;
         for result in results.iter_mut() {
           result.distance += candidate.distance;
