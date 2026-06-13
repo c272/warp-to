@@ -1,0 +1,74 @@
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::BufReader,
+    path::{Path, PathBuf},
+};
+
+use serde::{Deserialize, Serialize};
+
+/// User-defined config for warp-to.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct Config {
+    pub shortcuts: HashMap<String, String>,
+}
+
+impl Config {
+    pub fn new() -> Self {
+        Self {
+            shortcuts: HashMap::new(),
+        }
+    }
+
+    /// Loads the `warp-to` config file from disk, or creates one if not present.
+    pub fn create_or_load() -> Result<Self, String> {
+        let config_path = Self::get_config_path()?;
+
+        // If a config does not exist, create the default one & return it.
+        if !config_path.exists() {
+            let config = Self::new();
+            config.save_to_file(&config_path)?;
+            return Ok(config);
+        }
+
+        // Read the config from disk.
+        let file = File::open(config_path.clone())
+            .map_err(|_| format!("Failed to open config file @ '{}'.", config_path.display()))?;
+        let reader = BufReader::new(file);
+
+        serde_json::from_reader(reader)
+            .map_err(|e| format!("Failed to deserialize config file:\n{}", e))
+    }
+
+    /// Saves the config file to the given location on disk.
+    fn save_to_file(&self, path: &Path) -> Result<(), String> {
+        let config_str = serde_json::to_string_pretty(self)
+            .map_err(|_| "Failed to serialize config file.".to_string())?;
+
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p).map_err(|_| {
+                format!(
+                    "Failed to create parent directories for config file '{}'.",
+                    path.display()
+                )
+            })?;
+        }
+        std::fs::write(path, &config_str)
+            .map_err(|_| format!("Failed to write config file '{}'.", path.display()))
+    }
+
+    /// Gets the path that a config should be present at (Windows).
+    #[cfg(target_os = "windows")]
+    fn get_config_path() -> Result<PathBuf, String> {
+        let user_dir = std::env::var("APPDATA")
+            .map_err(|_| "Failed to find APPDATA directory to save config into.".to_string())?;
+        Ok(PathBuf::from_iter([&user_dir, "warp-to", "config.json"]))
+    }
+
+    /// Gets the path that a config should be present at (Unix-like).
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn get_config_path() -> Result<PathBuf, String> {
+        let config_dir = std::env::var("XDG_CONFIG_HOME").unwrap_or("~/.config".into());
+        Ok(PathBuf::from_iter([&config_dir, "warp-to", "config.json"]))
+    }
+}

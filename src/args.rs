@@ -20,12 +20,17 @@ where
     use lexopt::prelude::*;
 
     let mut values: Vec<OsString> = Vec::new();
+    let mut max_dist: usize = 5;
 
     let mut parser = lexopt::Parser::from_iter(args);
     while let Some(arg) = parser.next()? {
         match arg {
             Value(val) => {
                 values.push(val);
+            }
+            Short('d') | Long("distance") => {
+                let dist = parser.value()?.parse::<usize>()?;
+                max_dist = dist;
             }
             Long("help") => {
                 return Ok(Command::Help);
@@ -34,7 +39,7 @@ where
         }
     }
 
-    let search = Search::from(values);
+    let search = Search::new(values, max_dist);
 
     Ok(Command::Search(search))
 }

@@ -7,6 +7,15 @@ edition = "2024"
 name = "warpto"
 path = "src/main.rs"
 
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
 [dependencies]
 lexopt = "0.3.2"
+serde = { features = ["std", "derive"], version = "1.0.228" }
+serde_json = "1.0.150"
 walkdir = "2.5.0"
