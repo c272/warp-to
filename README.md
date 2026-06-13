@@ -1,5 +1,8 @@
 # warp-to
 
+A tool for warping to near and far folders in one bound.
+
+## Usage
 ```
 warp-to: A portal to nearby filesystems.
 

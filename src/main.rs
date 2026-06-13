@@ -1,3 +1,8 @@
+// `warp-to` Copyright (C) 2026, c272
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU General Public License v3 as published by the Free
+// Software Foundation.
+//
 use std::process::ExitCode;
 
 use crate::args::Command;
@@ -71,6 +76,15 @@ Terms:
                     Also supports "..".
   *  +<SHORTCUT>    A user-defined shortcut. See [3] for details.
 
+
+`warp-to` Copyright (C) 2026, c272
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License v3 as published by the Free
+Software Foundation.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 "#;
 
 fn main() -> ExitCode {

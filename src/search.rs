@@ -1,3 +1,8 @@
+// `warp-to` Copyright (C) 2026, c272
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU General Public License v3 as published by the Free
+// Software Foundation.
+//
 use std::ffi::OsString;
 use std::os::windows::fs::FileTypeExt;
 use std::path::Path;
