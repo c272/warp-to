@@ -4,14 +4,11 @@
 // Software Foundation.
 //
 use std::ffi::OsString;
-use std::os::windows::fs::FileTypeExt;
-use std::path::Path;
 use std::path::PathBuf;
-
-use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::fs;
+use crate::walker::DirectoryWalker;
 
 const ROOT_CHAR: char = '/';
 const HOME_CHAR: char = '~';
@@ -45,36 +42,6 @@ impl SearchStructure {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-
-    fn create_walker(
-        &self,
-        start: &Path,
-        ignore: Option<PathBuf>,
-        cur_depth: usize,
-        max_depth: usize,
-    ) -> impl Iterator<Item = walkdir::DirEntry> {
-        // Do not include the start directory itself if it's the CWD.
-        let min_depth = if cur_depth > 0 { 0 } else { 1 };
-
-        let walker = WalkDir::new(start)
-            .follow_links(true)
-            .min_depth(min_depth)
-            .max_depth(max_depth);
-
-        // TODO: We probably don't actually want depth-first search here.
-        // Since our goal is to find the closest item (lowest distance), initially going to super high
-        // depths is actually a detriment to us when returning the first viable match.
-        // `walkdir` doesn't support breadth-first though, so changing it requires rolling something custom.
-        walker
-            .into_iter()
-            .filter_entry(move |e| {
-                ignore
-                    .as_ref()
-                    .is_none_or(|ignore_path| e.path() != ignore_path)
-            })
-            .filter_map(|e| e.ok())
-            .filter(|d| d.file_type().is_dir() || d.file_type().is_symlink_dir())
     }
 }
 
@@ -330,71 +297,37 @@ impl SearchRunner {
             return Ok(Some(cur_dir.to_path_buf()));
         }
 
-        let mut iters = vec![];
-        let cur_dist = self.max_distance - rem_dist;
-        let ignore_dir = if cur_dist == 0 {
-            None
-        } else {
-            Some(self.cwd.clone())
-        };
-        iters.push(structure.create_walker(&cur_dir, ignore_dir, cur_dist, rem_dist));
-
-        if search_up {
-            // We should only search up at the very top layer of recursion.
-            assert!(rem_dist == self.max_distance);
-            let mut cur_up_path = cur_dir.as_path();
-
-            // Add the requisite iterators for searching ancestor directories.
-            for dist_up in 1..=rem_dist {
-                match cur_up_path.parent() {
-                    Some(parent) => {
-                        cur_up_path = parent;
-                    }
-                    None => {
-                        break;
-                    }
-                }
-
-                let max_dist_down = rem_dist - dist_up;
-                iters.push(structure.create_walker(
-                    cur_up_path,
-                    Some(self.cwd.clone()),
-                    cur_dist + dist_up,
-                    max_dist_down,
-                ));
-            }
-        }
-
+        let walker = DirectoryWalker::new(cur_dir, rem_dist)
+            .include_start_dir(false)
+            .walk_upward(search_up);
         let first_elem = structure.0.first().unwrap();
         let remaining_elems = &structure.0[1..];
 
-        for iter in iters {
-            for dir in iter {
-                if !dir.file_name().eq_ignore_ascii_case(&first_elem) {
-                    continue;
-                }
+        for dir in walker.into_iter() {
+            let Some(dir_name) = dir.dir_name() else {
+                continue; // No directory name (volume label etc.).
+            };
 
-                // First element match! Check if the entire group matches.
-                let dir_str = dir.path().to_str().unwrap();
-                let structure_path = PathBuf::from_iter(
-                    [dir_str]
-                        .into_iter()
-                        .chain(remaining_elems.iter().map(|e| e.as_str())),
-                );
-                if !structure_path.exists() {
-                    continue;
-                }
+            if !dir_name.eq_ignore_ascii_case(&first_elem) {
+                continue; // No match.
+            }
 
-                // Group match! Recursively try the next group along.
-                let matching_path = self.search_by_groups_inner(
-                    structure_path,
-                    &rem_groups[1..],
-                    false,
-                    rem_dist - 1,
-                )?;
-                if let Some(path) = matching_path {
-                    return Ok(Some(path));
-                }
+            // First element match! Check if the entire group matches.
+            let dir_str = dir.path().to_str().unwrap();
+            let structure_path = PathBuf::from_iter(
+                [dir_str]
+                    .into_iter()
+                    .chain(remaining_elems.iter().map(|e| e.as_str())),
+            );
+            if !structure_path.exists() {
+                continue;
+            }
+
+            // Group match! Recursively try the next group along.
+            let matching_path =
+                self.search_by_groups_inner(structure_path, &rem_groups[1..], false, rem_dist - 1)?;
+            if let Some(path) = matching_path {
+                return Ok(Some(path));
             }
         }
 

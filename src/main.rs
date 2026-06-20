@@ -11,6 +11,7 @@ mod args;
 mod config;
 mod fs;
 mod search;
+mod walker;
 
 const HELP: &str = r#"
 warp-to: A portal to nearby filesystems.
