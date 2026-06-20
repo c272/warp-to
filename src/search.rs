@@ -5,6 +5,7 @@
 //
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use crate::config::Config;
 use crate::fs;
@@ -192,11 +193,20 @@ impl Search {
     }
 }
 
+/// Configuration options for the search runner.
+#[derive(Debug)]
+pub(crate) struct SearchRunnerOpts {
+    /// Whether to respect user-defined ignores while searching.
+    pub use_ignores: bool,
+}
+
 /// Utility structure used for executing individual searches.
 /// Holds inter-search state.
 pub(crate) struct SearchRunner {
+    /// Configuration options.
+    opts: SearchRunnerOpts,
     /// User-defined config for `warp-to`.
-    config: Option<Config>,
+    config: Option<Rc<Config>>,
     /// The CWD used by the runner.
     cwd: PathBuf,
     /// The maximum distance used by the runner.
@@ -204,8 +214,9 @@ pub(crate) struct SearchRunner {
 }
 
 impl SearchRunner {
-    pub fn new() -> Self {
+    pub fn new(opts: SearchRunnerOpts) -> Self {
         Self {
+            opts,
             config: None,
             cwd: PathBuf::new(),
             max_distance: 0,
@@ -297,9 +308,18 @@ impl SearchRunner {
             return Ok(Some(cur_dir.to_path_buf()));
         }
 
-        let walker = DirectoryWalker::new(cur_dir, rem_dist)
+        // Create the directory walker.
+        let mut _config_rc = None;
+        let mut walker = DirectoryWalker::new(cur_dir, rem_dist)
             .include_start_dir(false)
             .walk_upward(search_up);
+
+        // If we are using the ignorelist, load and configure that.
+        if self.opts.use_ignores {
+            _config_rc = Some(self.get_or_load_config()?);
+            walker = walker.ignores(&_config_rc.as_ref().unwrap().ignore);
+        }
+
         let first_elem = structure.0.first().unwrap();
         let remaining_elems = &structure.0[1..];
 
@@ -362,11 +382,7 @@ impl SearchRunner {
         name: &str,
         structure: &SearchStructure,
     ) -> Result<PathBuf, String> {
-        // Load the config, if not already loaded.
-        if self.config.is_none() {
-            self.config = Some(Config::create_or_load()?);
-        }
-        let config = self.config.as_ref().unwrap();
+        let config = self.get_or_load_config()?;
 
         // If there is no configured shortcut which matches, error out.
         let Some(shortcut_str) = config.shortcuts.get(name) else {
@@ -384,6 +400,15 @@ impl SearchRunner {
         }
 
         Ok(path)
+    }
+
+    /// Fetches the currently loaded config, or reads it from disk if not currently loaded.
+    fn get_or_load_config(&mut self) -> Result<Rc<Config>, String> {
+        if self.config.is_none() {
+            let config = Config::create_or_load()?;
+            self.config = Some(Rc::new(config));
+        }
+        Ok(self.config.as_ref().unwrap().clone())
     }
 
     /// Finds a group based on a relative jump up from the CWD.

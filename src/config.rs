@@ -4,24 +4,85 @@
 // Software Foundation.
 //
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
+    ffi::OsString,
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser::SerializeSeq};
+
+#[cfg(target_os = "windows")]
+const DEFAULT_IGNORES: &'static [&'static str] =
+    &[".git", "Program Files", "Program Files (x86)", "Temp"];
+
+#[cfg(not(target_os = "windows"))]
+const DEFAULT_IGNORES: &'static [&'static str] = &[".git"];
 
 /// User-defined config for warp-to.
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Config {
+    /// User shortcuts used within search queries.
+    #[serde(default)]
     pub shortcuts: HashMap<String, String>,
+    /// Directory names to ignore when fuzzy searching.
+    #[serde(
+        default,
+        serialize_with = "serialize_ignore_hashset",
+        deserialize_with = "deserialize_ignore_hashset"
+    )]
+    pub ignore: HashSet<OsString>,
+}
+
+/// Serializes the "ignore" HashSet<OsString> to a plain string array in JSON.
+fn serialize_ignore_hashset<S>(ignore: &HashSet<OsString>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut seq_ser = serializer.serialize_seq(Some(ignore.len()))?;
+    for elem in ignore {
+        seq_ser.serialize_element(&elem.to_string_lossy())?;
+    }
+    seq_ser.end()
+}
+
+/// Deserializes an "ignore" HashSet<OsString> from a plain string array in JSON.
+fn deserialize_ignore_hashset<'de, D>(deserializer: D) -> Result<HashSet<OsString>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    struct JsonIgnoreHashSetVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for JsonIgnoreHashSetVisitor {
+        type Value = HashSet<OsString>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("An array containing directory names to ignore.")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut ignore = HashSet::new();
+
+            while let Some(elem) = seq.next_element::<String>()? {
+                ignore.insert(OsString::from(elem));
+            }
+
+            Ok(ignore)
+        }
+    }
+
+    deserializer.deserialize_any(JsonIgnoreHashSetVisitor)
 }
 
 impl Config {
     pub fn new() -> Self {
         Self {
             shortcuts: HashMap::new(),
+            ignore: HashSet::from_iter(DEFAULT_IGNORES.iter().map(|s| OsString::from(s))),
         }
     }
 

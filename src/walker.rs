@@ -5,14 +5,14 @@
 //
 use std::{
     collections::{HashSet, VecDeque},
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     os::windows::fs::FileTypeExt,
     path::PathBuf,
 };
 
 /// A directory walker which enumerates a set of directory nodes, breadth-first.
 /// Can also optionally search up the directory tree from the starting point.
-pub(crate) struct DirectoryWalker {
+pub(crate) struct DirectoryWalker<'c> {
     /// The starting point for the directory walker.
     start_dir: PathBuf,
     /// The maximum distance from the starting point to walk.
@@ -22,9 +22,11 @@ pub(crate) struct DirectoryWalker {
     walk_upward: bool,
     /// Whether to include the starting directory in the iteration. Default: true.
     include_start_dir: bool,
+    /// Directory names to ignore while iterating.
+    ignores: Option<&'c HashSet<OsString>>,
 }
 
-impl DirectoryWalker {
+impl<'c> DirectoryWalker<'c> {
     /// Creates a new directory walker, beginning at the given directory.
     pub fn new(start_dir: PathBuf, max_dist: usize) -> Self {
         Self {
@@ -32,6 +34,7 @@ impl DirectoryWalker {
             max_dist,
             walk_upward: false,
             include_start_dir: true,
+            ignores: None,
         }
     }
 
@@ -47,12 +50,19 @@ impl DirectoryWalker {
         self
     }
 
-    pub fn into_iter(self) -> WalkerIter {
+    /// Sets directory names to ignore while iterating.
+    pub fn ignores(mut self, ignores: &'c HashSet<OsString>) -> Self {
+        self.ignores = Some(ignores);
+        self
+    }
+
+    pub fn into_iter(self) -> WalkerIter<'c> {
         WalkerIter::new(
             WalkerIterOpts {
                 max_dist: self.max_dist,
                 walk_upward: self.walk_upward,
                 include_start_dir: self.include_start_dir,
+                ignores: self.ignores,
             },
             self.start_dir,
         )
@@ -60,20 +70,22 @@ impl DirectoryWalker {
 }
 
 /// User-configurable options for a single [`WalkerIter`].
-struct WalkerIterOpts {
+struct WalkerIterOpts<'c> {
     /// The maximum distance from the starting point to walk.
     max_dist: usize,
     /// Whether to include directories that are above the starting directory.
     walk_upward: bool,
     /// Whether to include the starting directory in the iteration. Default: true.
     include_start_dir: bool,
+    /// Directories to ignore while iterating.
+    ignores: Option<&'c HashSet<OsString>>,
 }
 
 /// An iterator for breadth-first walks of filesystems.
 /// Should only be constructed from a [`DirectoryWalker`] instance.
-pub(crate) struct WalkerIter {
+pub(crate) struct WalkerIter<'c> {
     /// User-configurable options, set on the [`DirectoryWalker`].
-    opts: WalkerIterOpts,
+    opts: WalkerIterOpts<'c>,
     /// The current queue of directories to walk.
     queue: VecDeque<DirEntry>,
     /// A set of ancestors which has already been queued.
@@ -81,9 +93,9 @@ pub(crate) struct WalkerIter {
     seen_ancestors: HashSet<PathBuf>,
 }
 
-impl WalkerIter {
+impl<'c> WalkerIter<'c> {
     /// Creates a new [`WalkerIter`] from user configured options.
-    fn new(opts: WalkerIterOpts, start: PathBuf) -> Self {
+    fn new(opts: WalkerIterOpts<'c>, start: PathBuf) -> Self {
         let mut queue = VecDeque::with_capacity(32);
         queue.push_back(DirEntry::start_dir(start));
 
@@ -184,7 +196,7 @@ impl WalkerIter {
     }
 }
 
-impl Iterator for WalkerIter {
+impl<'c> Iterator for WalkerIter<'c> {
     type Item = DirEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -196,6 +208,19 @@ impl Iterator for WalkerIter {
         // If we have reached the distance limit, do not fetch children.
         if cur_dir.distance == self.opts.max_dist {
             return Some(cur_dir);
+        }
+
+        // If the directory matches an ignore name, don't walk into it.
+        // We ignore this setting for the root search directory, as that has either been explicitly included
+        // in the search pattern or is the user's CWD.
+        if let Some(ignores) = self.opts.ignores.as_ref() {
+            if let Some(name) = cur_dir.dir_name() {
+                if cur_dir.relation_to_start != PathRelationship::Identical
+                    && ignores.contains(name)
+                {
+                    return Some(cur_dir);
+                }
+            }
         }
 
         // Queue later directories to be iterated based on the relationship.

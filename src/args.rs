@@ -5,7 +5,7 @@
 //
 use std::ffi::OsString;
 
-use crate::search::Search;
+use crate::search::{Search, SearchRunnerOpts};
 
 /// The command to be performed on a single execution of `warp-to`.
 #[derive(Debug)]
@@ -13,7 +13,7 @@ pub enum Command {
     /// Prints the help menu.
     Help,
     /// Performs a search & navigate.
-    Search(Search),
+    Search(Search, SearchRunnerOpts),
 }
 
 /// Parses command line arguments and finds a command to be performed.
@@ -26,6 +26,7 @@ where
 
     let mut values: Vec<OsString> = Vec::new();
     let mut max_dist: usize = 5;
+    let mut use_ignores = true;
 
     let mut parser = lexopt::Parser::from_iter(args);
     while let Some(arg) = parser.next()? {
@@ -37,6 +38,9 @@ where
                 let dist = parser.value()?.parse::<usize>()?;
                 max_dist = dist;
             }
+            Short('e') | Long("exhaustive") => {
+                use_ignores = false;
+            }
             Long("help") => {
                 return Ok(Command::Help);
             }
@@ -45,6 +49,7 @@ where
     }
 
     let search = Search::new(values, max_dist);
+    let opts = SearchRunnerOpts { use_ignores };
 
-    Ok(Command::Search(search))
+    Ok(Command::Search(search, opts))
 }

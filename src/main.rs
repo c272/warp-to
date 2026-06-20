@@ -67,6 +67,8 @@ Options:
   -d, --distance <DIST>  The maximum distance of the search, default 5.
                          Increasing this value will extend the search time of
                          the program, but provide better results.
+  -e, --exhaustive       Search directories that are ignored by the user's
+                         ignorelist, found in the `warp-to` config file.
 
 Terms:
   *  /              The root directory.
@@ -78,7 +80,7 @@ Terms:
   *  +<SHORTCUT>    A user-defined shortcut. See [3] for details.
 
 
-`warp-to` Copyright (C) 2026, c272
+`warp-to` (v0.1.0) Copyright (C) 2026, c272
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License v3 as published by the Free
 Software Foundation.
@@ -89,15 +91,21 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 "#;
 
 fn main() -> ExitCode {
-    let command = args::parse_args(std::env::args_os()).unwrap();
+    let command = match args::parse_args(std::env::args_os()) {
+        Ok(cmd) => cmd,
+        Err(err) => {
+            eprintln!("warp-to: {}", err);
+            return ExitCode::FAILURE;
+        }
+    };
 
     match command {
         Command::Help => {
             println!("{}", HELP);
             ExitCode::SUCCESS
         }
-        Command::Search(search) => {
-            let mut runner = search::SearchRunner::new();
+        Command::Search(search, opts) => {
+            let mut runner = search::SearchRunner::new(opts);
             match runner.run(search) {
                 Ok(dir) => {
                     println!("{}", dir);
