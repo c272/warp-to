@@ -62,3 +62,12 @@ pub(crate) fn fetch_ancestor(n: u32) -> Result<PathBuf, String> {
 
     Ok(cur_dir.to_path_buf())
 }
+
+#[cfg(target_os = "windows")]
+pub(crate) fn fetch_labelled_drive(c: char) -> Result<PathBuf, String> {
+    let path = PathBuf::from(format!("{}:\\", c));
+    if !path.exists() {
+        return Err(format!("No labelled drive exists at '{}:\\'.", c));
+    }
+    Ok(path)
+}

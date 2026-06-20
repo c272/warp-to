@@ -16,6 +16,7 @@ const HOME_CHAR: char = '~';
 const SEPARATOR_CHAR: char = '/';
 const SHORTCUT_CHAR: char = '+';
 const CWD_CHAR: char = '.';
+const LABELLED_VOLUME_CHAR: char = ':';
 
 /// A single concrete directory structure to search for.
 #[derive(Debug)]
@@ -71,19 +72,24 @@ pub(crate) enum SearchGroup {
     JumpUp(u32),
     /// A fuzzy search.
     Fuzzy(SearchStructure),
+    /// Root of a labelled drive (Windows only).
+    #[cfg(target_os = "windows")]
+    LabelledDrive(char),
 }
 
 impl From<OsString> for SearchGroup {
     fn from(value: OsString) -> Self {
         let value_str = value.into_string().unwrap();
 
-        // Standalone root/home.
+        // Standalone root/home, current working directory.
         if value_str.len() == 1 {
             let first_char = value_str.chars().nth(0).unwrap();
             if first_char == ROOT_CHAR {
                 return Self::new_absolute(AbsolutePathBase::Root, SearchStructure::empty());
             } else if first_char == HOME_CHAR {
                 return Self::new_absolute(AbsolutePathBase::Home, SearchStructure::empty());
+            } else if first_char == CWD_CHAR {
+                return Self::new_jump_up(0);
             }
         }
 
@@ -93,11 +99,13 @@ impl From<OsString> for SearchGroup {
             return Self::new_absolute(AbsolutePathBase::Root, structure);
         }
 
+        // Home base with structure.
         if value_str.starts_with(HOME_CHAR) {
             let structure = SearchStructure::parse(&value_str[1..]);
             return Self::new_absolute(AbsolutePathBase::Home, structure);
         }
 
+        // Shortcut with/without structure.
         if value_str.starts_with(SHORTCUT_CHAR) {
             let slash_idx_opt = value_str.find(SEPARATOR_CHAR);
 
@@ -113,19 +121,31 @@ impl From<OsString> for SearchGroup {
             return Self::new_shortcut(name, structure);
         }
 
-        if value_str.len() == 2 && value_str.starts_with(CWD_CHAR) {
-            let second_char = value_str.chars().nth(1).unwrap();
+        // Two-character length search groups.
+        if value_str.len() == 2 {
+            // Relative jump up.
+            if value_str.starts_with(CWD_CHAR) {
+                let second_char = value_str.chars().nth(1).unwrap();
 
-            // Check if there's a valid digit for this to be a relative jump up.
-            let digit = second_char.to_digit(10).or_else(|| {
-                if second_char == CWD_CHAR {
-                    Some(1)
-                } else {
-                    None
+                // Check if there's a valid digit for this to be a relative jump up.
+                let digit = second_char.to_digit(10).or_else(|| {
+                    if second_char == CWD_CHAR {
+                        Some(1)
+                    } else {
+                        None
+                    }
+                });
+                if let Some(digit) = digit {
+                    return Self::new_jump_up(digit);
                 }
-            });
-            if let Some(digit) = digit {
-                return Self::new_jump_up(digit);
+            }
+
+            // Labelled volume (Windows only).
+            #[cfg(target_os = "windows")]
+            if value_str.ends_with(LABELLED_VOLUME_CHAR) {
+                return Self::new_labelled_drive(
+                    value_str.chars().nth(0).unwrap().to_ascii_uppercase(),
+                );
             }
         }
 
@@ -149,6 +169,11 @@ impl SearchGroup {
 
     fn new_jump_up(n: u32) -> Self {
         Self::JumpUp(n)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn new_labelled_drive(c: char) -> Self {
+        Self::LabelledDrive(c)
     }
 }
 
@@ -292,6 +317,11 @@ impl SearchRunner {
             SearchGroup::Fuzzy(structure) => {
                 self.search_by_groups_fuzzy(cur_dir, structure, rem_groups, search_up, rem_dist)
             }
+            #[cfg(target_os = "windows")]
+            SearchGroup::LabelledDrive(c) => {
+                let dir = Self::search_for_group_labelled_drive(*c)?;
+                self.search_by_groups_inner(dir, next_rem_groups, false, rem_dist)
+            }
         }
     }
 
@@ -400,6 +430,12 @@ impl SearchRunner {
         }
 
         Ok(path)
+    }
+
+    /// Finds a labelled drive based group (Windows only).
+    #[cfg(target_os = "windows")]
+    fn search_for_group_labelled_drive(c: char) -> Result<PathBuf, String> {
+        fs::fetch_labelled_drive(c)
     }
 
     /// Fetches the currently loaded config, or reads it from disk if not currently loaded.
