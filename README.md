@@ -57,6 +57,8 @@ Options:
   -d, --distance <DIST>  The maximum distance of the search, default 5.
                          Increasing this value will extend the search time of
                          the program, but provide better results.
+  -e, --exhaustive       Search directories that are ignored by the user's
+                         ignorelist, found in the `warp-to` config file.
 
 Terms:
   *  /              The root directory.
